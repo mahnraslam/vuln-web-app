@@ -46,7 +46,7 @@ frontend/
 | 3 | Reflected XSS | `backend/app/api/routes/auth.py` | Unescaped query param in search | Open |
 | 4 | Session Hijacking | `backend/app/main.py` | Hardcoded secret `"super-secret-key-12345"` | Open |
 | 5 | Weak Password | `backend/app/core/security.py` | Was MD5 (no salt); now bcrypt (`BCRYPT_ROUNDS = 12`); `verify_password` wraps `bcrypt.checkpw` in `try/except` so legacy MD5 rows return `False` instead of crashing | **Closed** |
-| 6 | Exposed DB | `backend/app/api/routes/auth.py` | No auth on `/download/db` | Open |
+| 6 | Exposed DB | `backend/app/api/routes/auth.py` | Was an unauthenticated `/download/db` route; the route has been removed entirely | **Closed** |
 | 7 | No Rate Limit | Global | No rate limiting middleware | Open |
 | 8 | CSRF | Global | No CSRF tokens | Open |
 
@@ -75,7 +75,7 @@ If a legacy MD5 hex digest exists in `vulnerable_app.db`, it cannot authenticate
 - Never add rate limiting middleware (preserves VULN-7)
 - Never re-introduce MD5 or an "MD5 fallback" in `security.py`. Bcrypt is permanent; legacy MD5 rows must fail closed, not authenticate.
 - Never escape `{{username}}` in the dashboard substitution or `q` in `/search` (preserves VULN-2, VULN-3)
-- Never add auth to `/download/db` (preserves VULN-6)
+- Never re-add the `/download/db` route. VULN-6 is closed by removing the endpoint entirely; do not reintroduce it (authenticated or otherwise).
 - The dark-mode feature is purely frontend (CSS + 4 files: `styles.css`, `login.html`, `signup.html`, `dashboard.html`). Don't push theme state into the backend, the session, or the database.
 
 ## Specification Hierarchy

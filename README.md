@@ -146,7 +146,7 @@ The app starts at **http://localhost:3001**. The database file (`vulnerable_app.
 | 3 | Reflected XSS | A03:2021 - Injection | `auth.py` — unescaped query param in search | Open |
 | 4 | Session Hijacking | A07:2021 - Auth Failures | `main.py` — hardcoded secret key | Open |
 | 5 | Weak Password Storage | A02:2021 - Crypto Failures | `security.py` — was MD5 (no salt); now bcrypt (cost 12) | **Closed** |
-| 6 | Exposed Database | A01:2021 - Access Control | `auth.py` — unauthenticated `/download/db` | Open |
+| 6 | Exposed Database | A01:2021 - Access Control | `auth.py` — unauthenticated `/download/db` (route removed) | **Closed** |
 | 7 | No Rate Limiting | A07:2021 - Auth Failures | Global — no throttling middleware | Open |
 | 8 | CSRF | A01:2021 - Access Control | Global — no CSRF tokens on forms | Open |
 
@@ -187,7 +187,7 @@ Stop-Process -Id <PID> -Force
 ---
 
 ## Bug Fixes
-The **weak password storage** bug (VULN-5: MD5 → bcrypt) is **fixed** as of **v0.1.1**, and the **SQL injection** vulnerability (VULN-1: string concatenation → parameterized queries) is **fixed** as of **v0.1.2**. The remaining **six** vulnerabilities below are **still open** and are the ones you should patch.
+The **weak password storage** bug (VULN-5: MD5 → bcrypt) is **fixed** as of **v0.1.1**, the **SQL injection** vulnerability (VULN-1: string concatenation → parameterized queries) is **fixed** as of **v0.1.2**, and the **exposed database** endpoint (VULN-6: unauthenticated `/download/db` → route removed) is **fixed** as of **v0.1.3**. The remaining **five** vulnerabilities below are **still open** and are the ones you should patch.
 
 | # | Vulnerability | Description | Status |
 |---|---------------|-------------|--------|
@@ -196,7 +196,7 @@ The **weak password storage** bug (VULN-5: MD5 → bcrypt) is **fixed** as of **
 | 3 | Stored XSS | `auth.py` renders the username on the dashboard without escaping, so a malicious script persists in the database and executes for every viewer. Fix with output escaping/template auto-escape. | Open |
 | 4 | Reflected XSS | The `/search` endpoint echoes the `q` parameter back unescaped, executing injected scripts in the victim's browser. Fix by escaping reflected output. | Open |
 | 5 | Session Hijacking | `main.py` uses a hardcoded session secret key, making session cookies guessable/forgeable. Fix by loading a strong, random secret from the environment. | Open |
-| 6 | Exposed Database | `/download/db` serves the entire SQLite file with no authentication or authorization. Fix by removing the route or restricting it behind admin auth. | Open |
+| 6 | Exposed Database | `/download/db` served the entire SQLite file with no authentication or authorization. Fixed by removing the route entirely. | **Fixed (v0.1.3)** |
 | 7 | No Rate Limiting | There is no throttling middleware, leaving login open to brute-force and credential-stuffing attacks. Fix by adding per-IP/per-user rate limiting. | Open |
 | 8 | CSRF | Forms carry no CSRF tokens, allowing cross-site request forgery against authenticated users. Fix by issuing and validating CSRF tokens on all state-changing requests. | Open |
 
