@@ -1,5 +1,6 @@
 import sys
 import os
+import secrets
 
 # Add backend/ directory to sys.path so 'app' package resolves correctly
 # regardless of which directory the script is launched from
@@ -14,8 +15,9 @@ from app.db.session import init_db
 
 app = FastAPI(title="Vulnerable Web Application - Security Lab")
 
-# VULNERABILITY #4: Session Hijacking -- hardcoded weak secret key
-SECRET_KEY = "super-secret-key-12345"
+# FIXED: Session Hijacking closed -- secret loaded from the environment,
+# with a strong random fallback so a fresh checkout never ships a known key.
+SECRET_KEY = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 app.include_router(router)
