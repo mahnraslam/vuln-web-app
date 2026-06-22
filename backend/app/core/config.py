@@ -1,6 +1,6 @@
 """Configuration + .env loading for the Continue-with-Google, Email
-Verification, Account-Lockout, Email-OTP-2FA, Authenticator-App-TOTP-2FA, and
-QR-Code-Login features.
+Verification, Account-Lockout, Email-OTP-2FA, Authenticator-App-TOTP-2FA,
+QR-Code-Login, and CAPTCHA-on-Login features.
 
 Stdlib only -- no python-dotenv dependency. This module:
 
@@ -8,7 +8,7 @@ Stdlib only -- no python-dotenv dependency. This module:
    developer can keep their Google credentials AND SMTP credentials in one
    git-ignored file.
 2. Exposes the Google OAuth settings and an ``is_google_configured()`` gate.
-3. Exposes the SMTP / email-verification settings and an
+3. Exposes the SendGrid / email-verification settings and an
    ``is_email_configured()`` gate.
 4. Exposes the account-lockout thresholds (env-tunable, non-secret; no gate --
    the feature is always on with safe defaults).
@@ -87,22 +87,7 @@ def is_google_configured() -> bool:
     return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 
 
-# --- SMTP / Email-verification settings (all sourced from the environment) ----
-# Same posture as the Google block above: every value comes from env/.env, no
-# secret is hardcoded, and a missing config simply disables the feature (the
-# signup flow then shows the friendly "email not configured" page).
-SMTP_HOST = os.environ.get("SMTP_HOST", "")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
-SMTP_USER = os.environ.get("SMTP_USER", "")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
-# SMTP_FROM defaults to the authenticating user (most providers require the
-# From address to match the authenticated mailbox anyway).
-SMTP_FROM = os.environ.get("SMTP_FROM", "") or SMTP_USER
-
-# Network timeout (seconds) for the SMTP connect/login/send, so a slow or hung
-# mail server cannot pin a worker indefinitely.
-SMTP_TIMEOUT = float(os.environ.get("SMTP_TIMEOUT", "10"))
-
+# --- Email-verification settings (all sourced from the environment) ----------
 # Public base URL used to build the verification link spliced into the email
 # body. Trailing slash trimmed so f"{APP_BASE_URL}/verify?..." is always clean.
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:3001").rstrip("/")
@@ -113,14 +98,29 @@ EMAIL_VERIFICATION_TTL_SECONDS = int(
 )
 
 
+# --- SendGrid HTTP API (the only email transport) ----------------------------
+# Email is delivered exclusively over SendGrid's HTTPS API (port 443) via stdlib
+# urllib -- no new dependency. This avoids the outbound-SMTP ports that some PaaS
+# hosts (e.g. Render's free plan) block. SENDGRID_FROM MUST be an address (or
+# domain) verified in SendGrid. The API key is a real secret -- env/.env only,
+# never committed, never logged.
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
+SENDGRID_FROM = os.environ.get("SENDGRID_FROM", "")
+SENDGRID_HTTP_TIMEOUT = float(os.environ.get("SENDGRID_HTTP_TIMEOUT", "10"))
+
+
+def is_sendgrid_configured() -> bool:
+    """True only when a SendGrid API key AND a verified sender are present."""
+    return bool(SENDGRID_API_KEY and SENDGRID_FROM)
+
+
 def is_email_configured() -> bool:
-    """Return True only when host + user + password are all present.
+    """Return True when email can be sent (SendGrid is the only transport).
 
     The signup routes use this to decide whether to run the real verification
-    flow or render the friendly "email not configured" setup page. Mirrors
-    is_google_configured() above.
+    flow or render the friendly "email not configured" setup page.
     """
-    return bool(SMTP_HOST and SMTP_USER and SMTP_PASSWORD)
+    return is_sendgrid_configured()
 
 
 # --- Account-lockout settings (env-tunable, non-secret) ----------------------
@@ -179,3 +179,30 @@ QR_LOGIN_TTL_SECONDS = int(os.environ.get("QR_LOGIN_TTL_SECONDS", "120"))
 QR_LOGIN_POLL_INTERVAL_SECONDS = int(
     os.environ.get("QR_LOGIN_POLL_INTERVAL_SECONDS", "2")
 )
+
+
+# --- Cloudflare Turnstile CAPTCHA settings (site key public; secret key IS a secret) ---
+# An always-on CAPTCHA on POST /login: the login page shows a Turnstile widget and
+# the POST is verified server-side (core/captcha.py, stdlib urllib -- no new
+# dependency) BEFORE any password check. With BOTH keys unset the login page renders
+# no widget and the POST performs no check, so login works exactly as today (graceful
+# degrade, mirroring the Google/SMTP blocks above). The SITE key is public; the SECRET
+# key is a real secret -- env/.env only, never committed, never logged. A configured-
+# but-unreachable verify endpoint FAILS OPEN (allows login + logs a warning) -- a bot
+# filter must not lock out every legitimate user during a provider outage (same posture
+# as the rate limiter / account lockout; the opposite of CSRFMiddleware's fail-closed).
+TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "")
+TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "")
+
+# Network timeout (seconds) for the siteverify call, so a slow/hung Cloudflare
+# endpoint cannot pin a worker indefinitely (mirrors OAUTH_HTTP_TIMEOUT/SMTP_TIMEOUT).
+TURNSTILE_HTTP_TIMEOUT = float(os.environ.get("TURNSTILE_HTTP_TIMEOUT", "10"))
+
+
+def is_captcha_configured() -> bool:
+    """Return True only when both the site and secret keys are present.
+
+    The login route uses this to decide whether to render + enforce the Turnstile
+    widget or skip it entirely. Mirrors is_google_configured() / is_email_configured().
+    """
+    return bool(TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY)
