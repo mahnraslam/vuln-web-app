@@ -44,6 +44,7 @@ from app.services import oauth_service
 from app.services import verification_service
 from app.services import otp_service
 from app.services import totp_service
+from app.services import password_reset_service
 from app.db.session import get_db
 
 logger = logging.getLogger(__name__)
@@ -262,6 +263,7 @@ async def login_post(
     that mutation is what triggers SessionMiddleware to write the
     Set-Cookie header on the response.
     """
+    
     if config.is_captcha_configured() and not captcha.verify(cf_turnstile_response):
         return JSONResponse(
             {"error": "CAPTCHA verification failed. Please try again."},
@@ -941,3 +943,133 @@ async def logout(request: Request):
     """
     request.session.clear()
     return RedirectResponse(url="/login", status_code=302)
+
+
+@router.get("/forgot-password")
+async def forgot_password_page(request: Request):
+    """Render the forgot-password request form.
+
+    Unauthenticated, no session gate. Generates a fresh CSRF token for the
+    form, which will be validated on the subsequent POST submission.
+    """
+    token = get_or_create_csrf_token(request)
+    with open(os.path.join(TEMPLATE_DIR, "forgot_password.html"), "r") as f:
+        page = f.read()
+    page = page.replace("{{csrf_token}}", html.escape(token, quote=True))
+    return HTMLResponse(content=page)
+
+
+@router.post("/forgot-password")
+async def forgot_password_post(
+    request: Request,
+    email: str = Form(""),
+):
+    """Handle a forgot-password request.
+
+    Reads the submitted email and calls password_reset_service.request_reset()
+    to issue a token if the account exists, is local (not Google-only), etc.
+    Returns the SAME generic 200 message regardless of whether a token was
+    issued, so an attacker cannot enumerate accounts or provider types.
+
+    This is the enumeration-resistance contract: the route ensures every outcome
+    (success, no-such-email, Google-only account, SMTP failure) results in the
+    identical response to the client. The service itself is silent; the route
+    guarantees the external posture.
+    """
+    password_reset_service.request_reset(email, background=True)
+    # Always return the same message, regardless of outcome. The user must
+    # check their email to know if a reset was actually sent.
+    return JSONResponse(
+        {
+            "success": True,
+            "message": "If that email is registered, we've sent a password reset link. It will expire in 1 hour.",
+        }
+    )
+
+
+@router.get("/reset-password")
+async def reset_password_page(request: Request):
+    """Render the reset-password form, validating the token first.
+
+    Unauthenticated. Reads token from query param and calls
+    password_reset_service.validate_token() to determine if the link is valid.
+    On success (ok), renders the "choose a new password" form with the token
+    spliced into a hidden field (already validated, not raw query param).
+    On failure (invalid/expired/missing token), renders a fixed generic message
+    with a link back to /forgot-password.
+
+    The read-only validate_token() call means page refreshes and multiple tabs
+    do not consume/invalidate the link; only a successful POST reset does.
+    """
+    token = request.query_params.get("token", "")
+    result = password_reset_service.validate_token(token)
+
+    if result["status"] == "ok":
+        # Render the form with the already-validated token spliced in.
+        with open(os.path.join(TEMPLATE_DIR, "reset_password.html"), "r") as f:
+            page = f.read()
+        csrf_token = get_or_create_csrf_token(request)
+        page = page.replace("{{csrf_token}}", html.escape(csrf_token, quote=True))
+        page = page.replace("{{token}}", html.escape(token, quote=True))
+        return HTMLResponse(content=page)
+    else:
+        # Token is invalid or expired. Render a fixed message (no raw token
+        # echoed) with a link back to /forgot-password so the user can
+        # request a new reset if needed.
+        error_msg = (
+            "This link is invalid or has expired. "
+            '<a href="/forgot-password">Request a new reset link</a>.'
+        )
+        html_response = (
+            "<html><head><title>Reset Password</title>"
+            "<link rel='stylesheet' href='/static/css/styles.css'></head>"
+            "<body class='auth-body'><div class='auth-container'>"
+            "<div class='auth-card'><h2>Reset Password</h2>"
+            f"<p>{error_msg}</p>"
+            "</div></div></body></html>"
+        )
+        return HTMLResponse(content=html_response)
+
+
+@router.post("/reset-password")
+async def reset_password_post(
+    request: Request,
+    token: str = Form(""),
+    new_password: str = Form(""),
+):
+    """Handle a reset-password submission.
+
+    Reads the token and new_password from the form and calls
+    password_reset_service.reset_password_with_token(). Returns JSON for every
+    outcome so the page's fetch handler can render feedback inline.
+
+    The CSRF token and per-IP rate limit are enforced by middleware before
+    this handler runs; FastAPI's Form() ignores the extra csrf_token field.
+    """
+    result = password_reset_service.reset_password_with_token(token, new_password)
+
+    if result["status"] == "ok":
+        return JSONResponse(
+            {
+                "success": True,
+                "message": "Password reset successfully. You can now log in with your new password.",
+                "redirect": "/login",
+            }
+        )
+    elif result["status"] == "weak_password":
+        return JSONResponse(
+            {
+                "error": (
+                    "New password must be at least 8 characters and include an "
+                    "uppercase letter, a lowercase letter, a digit, and a special character"
+                )
+            },
+            status_code=400,
+        )
+    else:
+        # "invalid" or "expired"
+        return JSONResponse(
+            {"error": "Reset link is invalid or has expired. Please request a new one."},
+            status_code=400,
+        )
+

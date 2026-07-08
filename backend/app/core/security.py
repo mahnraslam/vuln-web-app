@@ -9,7 +9,7 @@ Public surface: hash_password() and verify_password(). The auth service uses
 hash_password() on signup to produce the stored hash, and verify_password()
 on login to check a candidate password against that stored hash.
 """
-
+import re
 import bcrypt
 
 # Work factor for bcrypt. 12 ~= ~250 ms per hash on modern hardware -- slow
@@ -46,3 +46,32 @@ def verify_password(plain: str, hashed: str) -> bool:
         return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
         return False
+    
+
+
+def password_meets_policy(password: str) -> bool:
+    """Return True if the password satisfies the application's policy.
+
+    Policy:
+    - at least 8 characters
+    - one uppercase letter
+    - one lowercase letter
+    - one digit
+    - one special character
+    """
+    if not password or len(password) < 8:
+        return False
+
+    if not re.search(r"[A-Z]", password):
+        return False
+
+    if not re.search(r"[a-z]", password):
+        return False
+
+    if not re.search(r"\d", password):
+        return False
+
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return False
+
+    return True

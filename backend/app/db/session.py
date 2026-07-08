@@ -97,6 +97,12 @@ def init_db():
     - `totp_last_step INTEGER`: the last accepted TOTP time-step counter, for
       replay protection (a code already used cannot be reused inside its window);
       NULL until the first successful verify.
+    - `password_reset_token TEXT`: the active single-use password-reset token
+      (`secrets.token_urlsafe(32)`), or NULL when none is outstanding
+      (Forgot / Reset Password feature, v2.1.0).
+    - `password_reset_token_expires REAL`: Unix epoch seconds after which the
+      reset token is dead, or NULL. Compared against `time.time()` on
+      /reset-password (v2.1.0).
     """
     conn = get_db()
     conn.execute(
@@ -121,7 +127,9 @@ def init_db():
             otp_last_sent              REAL,
             totp_secret                TEXT,
             totp_enabled               INTEGER DEFAULT 0,
-            totp_last_step             INTEGER
+            totp_last_step             INTEGER,
+            password_reset_token       TEXT,
+            password_reset_token_expires REAL
         )"""
     )
 
@@ -160,6 +168,11 @@ def init_db():
         "totp_secret": "ALTER TABLE users ADD COLUMN totp_secret TEXT",
         "totp_enabled": "ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0",
         "totp_last_step": "ALTER TABLE users ADD COLUMN totp_last_step INTEGER",
+        # Forgot / Reset Password feature (v2.1.0): two columns, both nullable.
+        # Defaults (NULL / NULL) already mean "no reset outstanding", so NO
+        # grandfather UPDATE is needed.
+        "password_reset_token": "ALTER TABLE users ADD COLUMN password_reset_token TEXT",
+        "password_reset_token_expires": "ALTER TABLE users ADD COLUMN password_reset_token_expires REAL",
     }
     for column, ddl in migrations.items():
         if column not in existing:

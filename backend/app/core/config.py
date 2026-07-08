@@ -97,6 +97,14 @@ EMAIL_VERIFICATION_TTL_SECONDS = int(
     os.environ.get("EMAIL_VERIFICATION_TTL_SECONDS", "3600")
 )
 
+# --- Password reset token lifetime (v2.1.0) ---------------------------------
+# Lifetime in seconds for password-reset tokens issued by the forgot/reset
+# flow. Default 1 hour. Tunable via the environment variable
+# `PASSWORD_RESET_TTL_SECONDS`.
+PASSWORD_RESET_TTL_SECONDS = int(
+    os.environ.get("PASSWORD_RESET_TTL_SECONDS", "3600")
+)
+
 
 # --- SendGrid HTTP API (the only email transport) ----------------------------
 # Email is delivered exclusively over SendGrid's HTTPS API (port 443) via stdlib
@@ -108,19 +116,34 @@ SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
 SENDGRID_FROM = os.environ.get("SENDGRID_FROM", "")
 SENDGRID_HTTP_TIMEOUT = float(os.environ.get("SENDGRID_HTTP_TIMEOUT", "10"))
 
+# --- SMTP settings (used only for Password Reset) ----------------------------
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "")
+SMTP_TIMEOUT = float(os.environ.get("SMTP_TIMEOUT", "10"))
 
 def is_sendgrid_configured() -> bool:
     """True only when a SendGrid API key AND a verified sender are present."""
     return bool(SENDGRID_API_KEY and SENDGRID_FROM)
-
+def is_smtp_configured() -> bool:
+    """True only when SMTP credentials are present."""
+    return bool(
+        SMTP_HOST
+        and SMTP_PORT
+        and SMTP_USERNAME
+        and SMTP_PASSWORD
+        and EMAIL_FROM
+    )
 
 def is_email_configured() -> bool:
-    """Return True when email can be sent (SendGrid is the only transport).
+    """Return True when at least one email transport is configured.
 
-    The signup routes use this to decide whether to run the real verification
-    flow or render the friendly "email not configured" setup page.
+    Signup/OTP use SendGrid.
+    Password reset may use SMTP.
     """
-    return is_sendgrid_configured()
+    return is_sendgrid_configured() or is_smtp_configured()
 
 
 # --- Account-lockout settings (env-tunable, non-secret) ----------------------
