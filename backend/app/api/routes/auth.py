@@ -815,7 +815,7 @@ async def qr_create(request: Request):
     """
     token = qr_login.create_token()
     request.session["qr_login_token"] = token
-    qr_url = f"{config.APP_BASE_URL}/qr/scan/{token}"
+    qr_url = f"{config.QR_APP_BASE_URL}/qr/scan/{token}"
     return JSONResponse(
         content={
             "token": token,

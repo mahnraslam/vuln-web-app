@@ -194,10 +194,17 @@ TOTP_SECRET_BYTES = 20  # fixed: 160-bit secret (RFC 6238 norm), base32 in the Q
 # pattern). State is in-memory (core/qr_login.py) and the signed session -- there
 # is NO DB schema change and NO new dependency (the QR image reuses `segno`, added
 # for TOTP in v1.0.7). These are NOT secrets and have NO is_*_configured() gate --
-# QR login needs neither SMTP nor Google. The scannable URL is built from the
-# existing APP_BASE_URL above: for a real cross-device scan set APP_BASE_URL to an
-# address the scanning device can reach (LAN IP / public origin); on localhost
-# "scan" by opening the URL in a second, already-logged-in browser.
+# QR login needs neither SMTP nor Google.
+#
+# The scannable URL is built from QR_APP_BASE_URL, which DEFAULTS TO APP_BASE_URL
+# so nothing breaks for existing setups. Override it separately when a
+# phone needs a LAN IP / public origin to reach the app, while APP_BASE_URL
+# (used for email-verification and password-reset links, and trusted by the
+# Turnstile CAPTCHA hostname config) must stay on the browser's normal host
+# -- otherwise a reset-password link inherits the QR IP and lands the user on
+# a host Turnstile doesn't recognise ("Unable to connect to website").
+QR_APP_BASE_URL = os.environ.get("QR_APP_BASE_URL", APP_BASE_URL).rstrip("/")
+
 QR_LOGIN_TTL_SECONDS = int(os.environ.get("QR_LOGIN_TTL_SECONDS", "120"))
 QR_LOGIN_POLL_INTERVAL_SECONDS = int(
     os.environ.get("QR_LOGIN_POLL_INTERVAL_SECONDS", "2")
